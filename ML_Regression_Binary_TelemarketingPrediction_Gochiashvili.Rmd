@@ -1,0 +1,928 @@
+---
+title: "Predicting Customer Conversion @ Bank Telemarketing Campaign"
+author: 'Lasha Gochiashvili'
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+    
+---
+
+
+```{r setup, echo=FALSE, cache=FALSE}
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=FALSE,
+	             cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+![](img/g.jpg)
+
+# 1. Business Problem
+## 1.1. Background
+
+Due to the digital transformation of the world and circumstances caused by Covid 19 companies speed up developing of online and telemarketing marketing channels to reach the customers.
+
+Companies spend from **$1 to $10** per customer call. This is huge budget in big scale. However, there are ways to optimize the return on investment (ROI). Companies can develop machine learning models to predict which customer has more chance to be converted.
+This way companies can target right customer and optimize marketing activities to get higher ROI.
+
+## 1.2. Goals & Objectives 
+
+>Our **goal** is to create the most accurate model that predicts whether customer subscribes a short term deposit or not. 
+
+* We will analyze data with regards to dependent variable deposit (open  "yes or "no") and other independent variables. 
+* We will select and transform variables. 
+* We will compare different machine learning algorithms
+* We will optimize the selected algorithms
+* We will derive insights from the analysis
+
+## 1.3. Dataset source
+
+The dataset is from the UCI Machine Learning Repository.
+
+The data is related with direct marketing campaigns (phone calls) of a 
+Portuguese banking institution.
+
+`bank-additional-full.csv` with all examples (41188) and 20 inputs, 
+ordered by date (from May 2008 to November 2010), very close to the 
+data analyzed in 1[Moro et al., 2014]1
+
+Link to the source: https://archive.ics.uci.edu/ml/datasets/Bank+Marketing
+
+Source Paper:
+[Moro et al., 2014] S. Moro, P. Cortez and P. Rita. A Data-Driven Approach 
+to Predict the Success of Bank Telemarketing. Decision Support Systems, 
+Elsevier, 62:22-31, June 2014
+
+
+# 2. Prepare Problem
+
+## 2.1. Load libraries
+
+```{r echo = T, results = 'hide', message= FALSE}
+
+library(psych) # tests, correlation
+library(knitr) # tables
+library(plyr) # data manipulation
+library(dplyr) # data manipulation
+library(caret) # models
+library(corrplot) # correlation plots
+library(DALEX) # explain models
+library(DescTools) # plots
+library(doParallel) # parallel processing
+library(dplyr) # syntax
+library(ggplot2) # plots
+library(inspectdf) # data overview
+library(readr) # quick load
+library(sjPlot) # contingency tables
+library(tictoc) # measure time
+library(funModeling) # data preparation
+library(purrr) # functional programming
+library(yarrr) # nice plots
+library(expss) # computation
+library(verification) # model verification
+library(janitor) # cleaning data
+library(class) # classification algorithms
+library(kernlab)# Kernel-based ml methods
+library(MASS) # functions and datasets
+library(rmarkdown) # r markdown
+library(formatR) # plots formatting 
+
+```
+
+
+```{r echo = F, results = 'hide', message= FALSE}
+setwd("C:/Users/Lasha/Desktop/Lasha/Education/`UW DS/II Semester/ML1/Project")
+```
+
+## 2.2. Load dataset
+
+```{r echo = T, results = 'hide', message= FALSE}
+data <- read_csv("bank_marketing.csv")
+```
+
+
+# 3. Summarize Data
+
+## 3.1. Feature description
+
+
+Let's check the columns names of the dataset:
+
+```{r echo = T, results = 'asis', message= FALSE}
+colnames(data)
+```
+
+Let's change the name of output variable from `y` to `deposit` to make it more intuitive.
+
+```{r echo = T, results = 'hide', message= FALSE}
+names(data)[names(data) == "y"] <- "deposit"
+```
+
+
+**Bank client data:**
+
+1. `age` (numeric)
+2. `job` type of job (categorical: 'admin.','blue-collar','entrepreneur','housemaid','management','retired','self-employed','services','student','technician','unemployed','unknown')
+3. `marital` marital status (categorical: 'divorced','married','single','unknown'; note: 'divorced' means divorced or widowed)
+4. `education` (categorical: basic.4y','basic.6y','basic.9y','high.school','illiterate','professional.course','university.degree','unknown')
+5. `default` has credit in default? (categorical: 'no','yes','unknown')
+6. `housing` has housing loan? (categorical: 'no','yes','unknown')
+7. `loan` has personal loan? (categorical: 'no','yes','unknown')
+
+**campaign related attributes:**
+
+8. `contact` contact communication type (categorical: 'cellular','telephone')
+9. `month` last contact month of year (categorical: 'jan', 'feb', 'mar', ..., 'nov', 'dec')
+10. `day_of_week` last contact day of the week (categorical: 'mon','tue','wed','thu','fri')
+11. `duration` last contact duration, in seconds (numeric). Important note: this attribute highly affects the output target (e.g., if duration=0 then y='no'). Yet, the duration is not known before a call is performed. Also, after the end of the call y is obviously known. Thus, this input should only be included for benchmark purposes and should be discarded if the intention is to have a realistic predictive model.
+12. `campaign` number of contacts performed during this campaign and for this client (numeric, includes last contact)
+13. `pdays` number of days that passed by after the client was last contacted from a previous campaign (numeric; 999 means client was not previously contacted)
+14. `previous` number of contacts performed before this campaign and for this client (numeric)
+15. `poutcome` outcome of the previous marketing campaign (categorical: 'failure','nonexistent','success')
+
+**social and economic attributes:**
+
+16. `emp.var.rate` employment variation rate - quarterly indicator (numeric)
+17. `cons.price.idx` consumer price index - monthly indicator (numeric)
+18. `cons.conf.idx` consumer confidence index - monthly indicator (numeric)
+19. `euribor3m` euribor 3 month rate - daily indicator (numeric)
+20. `nr.employed` number of employees - quarterly indicator (numeric)
+
+**Output/dependent/target variable:**
+
+21. `deposit` - has the client subscribed a term deposit? (binary: 'yes','no')
+
+
+
+## 3.2. Descriptive statistics
+
+
+```{r echo = T, results = 'asis', message= FALSE}
+
+paste("The dataset initialy has", dim(data)[1], "rows and",  dim(data)[2], "columns")
+
+```
+
+```{r echo = T, results = 'asis', message= FALSE}
+
+kable(data[1:10,], capture = "Dataset first 10 records")
+
+
+```
+
+
+**Explore categorical variables**
+
+Let's find all character variables in our dataset, convert them as factor and and save names as a vector.
+
+```{r echo = T, results = 'asis', message= FALSE}
+
+data <- data %>% purrr::modify_at(colnames(data[, sapply(data, class) == 'character']), as.factor)
+
+data_categorical_vars <- colnames(data[, sapply(data, class) == 'factor'])
+
+data_categorical_vars # categorical variables
+
+```
+
+*Job vs Deposit
+
+```{r echo = F, results='asis'}
+
+cro_cpct(data$deposit, list(total(), data$job))
+
+pj <- ggplot(
+  data %>%
+    group_by(job, deposit) %>%
+    tally(),
+  aes(job, n, fill = deposit)) +
+  geom_col() +
+  theme_bw()
+
+pj + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+*Education vs Deposit
+
+```{r echo = F, results='asis'}
+cro_cpct(data$deposit, list(total(), data$education))
+
+pj <- ggplot(
+  data %>%
+    group_by(education, deposit) %>%
+    tally(),
+  aes(education, n, fill = deposit)) +
+  geom_col() +
+  theme_bw()
+
+pj + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+Let's check the dependent variable - deposit
+
+
+```{r echo = F, results='asis'}
+
+table(data$deposit)
+
+```
+
+**Explore Numerical variables**
+
+Lets identify numeric variables and save names as a vector.
+
+```{r}
+data_numeric_vars <- colnames(data[, sapply(data, class) == 'numeric'])
+
+```
+
+Let's explore how many unique values does each numeric variable have and sort variables by increasing number of levels in the end.
+
+```{r}
+
+sapply(data[, data_numeric_vars], 
+       function(x) 
+         unique(x) %>% 
+         length()) %>% 
+  sort()
+
+```
+
+
+```{r}
+
+summary(data)
+
+```
+
+
+
+
+## 3.3. Data visualizations
+
+
+```{r echo = T, results = 'hide', message= FALSE}
+
+par(mfrow=c(1,1))
+
+pirateplot(formula = age ~ deposit,
+           data = data,
+           theme = 0,
+           main = "age vs deposit",
+           pal = "southpark", # southpark color palette
+           bean.f.o = .6, # Bean fill
+           point.o = .3, # Points
+           inf.f.o = .7, # Inference fill
+           inf.b.o = .8, # Inference border
+           avg.line.o = 1, # Average line
+           bar.f.o = .5, # Bar
+           inf.f.col = "white", # Inf fill col
+           inf.b.col = "black", # Inf border col
+           avg.line.col = "black", # avg line col
+           bar.f.col = gray(.8), # bar filling color
+           point.pch = 21,
+           point.bg = "white",
+           point.col = "black",
+           point.cex = .7)
+
+
+
+```
+
+
+
+```{r}
+
+ggplot(data, aes(duration, fill = deposit)) +
+  geom_density(alpha = 0.5) +
+  theme_bw()
+
+```
+
+
+
+# 4. Prepare Data
+
+## 4.1. Missing values
+
+Let's count missing values:
+
+```{r echo = T, results = 'asis', message= FALSE}
+
+colSums(is.na(data)) %>% 
+  sort()
+
+```
+
+We do not have missing values.
+
+
+## 4.2. Data Transforms {.tabset .tabset-pills}
+
+### Previous
+
+Some of them have 8-11 levels. Let's see these variables in more details
+
+```{r}
+
+table(data$previous)
+```
+
+We could add previous 6 and 7 to 5. It will make more sense. 
+
+```{r}
+data$previous[data$previous==7] <- 5
+data$previous[data$previous==6] <- 5
+```
+
+### Job
+
+```{r}
+table(data$job)
+
+```
+
+We will change names "unknown" in all variables to avoid issues during running models.
+
+```{r}
+#data$job[data$job=="unknown"] <- "job_unknown"
+data$job <- plyr::revalue(data$job, c("unknown"="job.unknown"))
+
+```
+
+### Marital status
+
+```{r}
+table(data$marital)
+
+```
+
+We will add "unknown" group to "married" - the biggest group.
+
+```{r}
+data$marital <- plyr::revalue(data$marital, c("unknown"="married"))
+```
+
+### Education
+
+```{r}
+table(data$education)
+
+```
+We will rename "unknown" group to "edu.unknown".
+
+```{r}
+data$education <- plyr::revalue(data$education, c("unknown"="edu.unknown"))
+```
+
+
+### Default
+
+```{r}
+table(data$default)
+
+```
+We will change "unknown" to "def.unknown" and add 3 "yes" to that group. It will make more sense. 
+
+```{r}
+data$default <- plyr::revalue(data$default, c("unknown"="def.unknown"))
+data$default <- plyr::revalue(data$default, c("yes"="def.unknown"))
+```
+
+
+###  Housing
+
+```{r}
+table(data$housing)
+
+```
+We will change "unknown" to "ho.unknown".
+
+```{r}
+data$housing <- plyr::revalue(data$housing, c("unknown"="ho.unknown"))
+```
+
+
+### Loan
+
+```{r}
+table(data$loan)
+
+```
+We will change "unknown" to "no" - biggest group.
+
+```{r}
+data$loan <- plyr::revalue(data$loan, c("unknown"="no"))
+```
+
+### pdays
+
+```{r}
+table(data$pdays)
+
+```
+We can see that there is big deviation. Those there were not contacted have 999. We will assign 0 instead.
+
+
+
+```{r}
+data$pdays[data$pdays==999] <- 0
+
+```
+
+
+
+
+## 4.3. Data partitioning
+
+
+
+```{r echo = T, results = 'asis', message= FALSE}
+
+set.seed(987654321)
+
+data_which_train <- createDataPartition(data$deposit, # target variable
+                                          # share of the training sample
+                                          p = 0.7, 
+                                          list = FALSE) 
+
+# It is a vector of numbers - indexes of 70% of observations selected 
+head(data_which_train)
+
+# We need to apply this index for data division
+data_train <- data[data_which_train,]
+data_test <- data[-data_which_train,]
+
+```
+
+## 4.4. Feature Selection
+
+
+**Correlation**
+
+Let's observer the correlation between numerical variables
+
+```{r}
+data_correlations <- 
+  cor(data_train[,data_numeric_vars],
+      use = "pairwise.complete.obs")
+
+corrplot.mixed(data_correlations,
+               upper = "square",
+               lower = "number",
+               tl.col="black", # color of labels (variable names)
+               tl.pos = "lt")  # position of labels (lt = left and top)
+
+```
+
+There are correlation between euribor3nm and emp.var.rate, between nr.employed and emp.var.rate, euribor3nm and cons.price.idx, fair correlation between cons.price.idx and nr.employed, between cons.conf.inx and euribor3m
+
+**Note:**
+As our dependent variable is categorical, we cannot observe in corrplot.mixed function.
+
+
+Correlation between target variable (categorical/binomial) and other categorical variables.
+We will use `Cramer's V` coefficient from Chi2 test statistic.
+`Cramer's V`  takes values from 0 to 1, where higher values mean a stronger relationship (if both variables have only two levels `Cramer's V` take values from -1 to 1)
+
+All categorical variables:
+
+```{r}
+data_categorical_vars
+
+```
+
+
+**Deposit vs Education**
+
+```{r}
+education <- DescTools::CramerV(data_train$deposit,
+                   data_train$education)
+
+education
+
+```
+
+We will repeat the same for all other categorical variables.
+
+```{r echo=F}
+job <- DescTools::CramerV(data_train$deposit,
+                   data_train$job)
+marital <- DescTools::CramerV(data_train$deposit,
+                   data_train$marital)
+default <- DescTools::CramerV(data_train$deposit,
+                   data_train$default)
+housing <- DescTools::CramerV(data_train$deposit,
+                   data_train$housing)
+loan <- DescTools::CramerV(data_train$deposit,
+                   data_train$loan)
+contact <- DescTools::CramerV(data_train$deposit,
+                   data_train$contact)
+month <- DescTools::CramerV(data_train$deposit,
+                   data_train$month) # Moderately strong relationship
+day_of_week <- DescTools::CramerV(data_train$deposit,
+                   data_train$day_of_week)
+poutcome <- DescTools::CramerV(data_train$deposit,
+                   data_train$poutcome) # Moderately strong relationship
+
+```
+
+
+```{r}
+
+kable(data.frame(education, job, marital, default, housing, loan, contact, month, day_of_week, poutcome), capture = "Correlation between target & categorical variables")
+
+```
+
+Moderately strong relationship `Deposit` vs `poutcome` and `Deposit` vs `Month`. However, correlation between target and other categorical variables are not strong.
+
+
+
+**Feature engineering**
+
+near zero
+
+```{r}
+nearZeroVar(data_train,
+            saveMetrics = TRUE)
+```
+
+Let's see the problematic value index
+
+```{r}
+nearZeroVar(data_train)
+
+```
+Variables Index 13. We will deal with this variable in next section.
+
+
+Identification of linear relationships in the data
+
+Let's find out redundant variables as redundant, those that can be determined from the others. They do not bring anything to the analysis
+
+Llets check it for numeric variables
+
+```{r}
+( findLinearCombos(data_train[, data_numeric_vars] ) ->
+    houses_linearCombos )
+```
+No linear combination found.
+
+
+
+
+
+# 5. Evaluate Algorithms
+## 5.1. Test options and evaluation metric
+
+We will set 5-fold `cross validation` to estimate `accuracy`.
+
+This will split our dataset into 5 parts, train in 4 and test on 1 and release for all combinations of train-test splits. We will also repeat the process 3 times for each algorithm with different splits of the data into 5 groups, in an effort to get a more accurate estimate.
+
+by using cross validation on the training sample
+we can determine the EXPECTED forecast error
+WITHOUT looking into the test data
+
+
+```{r}
+control <- trainControl(method="cv", number=5)
+metric <- "Accuracy" # also "ROC"
+```
+
+We are using the metric of `accuracy` to evaluate models. This is a ratio of the number of correctly predicted instances in divided by the total number of instances in the dataset multiplied by 100 to give a percentage (e.g. 95% accurate). We will be using the metric variable when we run build and evaluate each model next.
+
+
+## 5.2. Compare Algorithms -- Accuracy
+
+We will use a couple of algorithms. From linear algorithms we will use glm, lda and qda. From nonlinear algorithms we will use CART and KNN.
+
+
+```{r message= FALSE} 
+#
+# logistic regression
+set.seed(987654321)
+fit.glm <- train(deposit~., data=data_train, method="glm", family = "binomial", metric=metric, trControl=control)
+# a) linear algorithms
+# LDA
+set.seed(987654321)
+fit.lda1 <- train(deposit~., data=data_train, method="lda", metric=metric, trControl=control)
+# LDA2
+set.seed(987654321)
+fit.lda2 <- train(deposit~., data=data_train, method="lda", metric=metric, trControl=control, prior = c(0.5, 0.5))
+# QDA
+set.seed(987654321)
+fit.qda1 <- train(deposit~., data=data_train, method="qda", metric=metric, trControl=control)
+# QDA2
+set.seed(987654321)
+fit.qda2 <- train(deposit~., data=data_train, method="qda", metric=metric, trControl=control, prior = c(0.5, 0.5))
+# b) nonlinear algorithms
+# CART
+set.seed(987654321)
+fit.cart <- train(deposit~., data=data_train, method="rpart", metric=metric, trControl=control)
+# kNN
+set.seed(987654321)
+fit.knn <- train(deposit~., data=data_train, method="knn", metric=metric, trControl=control)
+
+```
+
+Let's see the results of the training by the algorithms. Summarize accuracy of models
+
+
+```{r message= FALSE} 
+
+results <- resamples(list(glm=fit.glm, lda1=fit.lda1, lda2=fit.lda2, qda1=fit.qda1,
+                          qda2=fit.qda2, cart=fit.cart, knn=fit.knn))
+summary(results)
+
+```
+According to the results mean of `accuracy` is between 0.86 and 0.91. `accuracy` is quite high. The highest `accuracy` is in glm algorithm. The second place is cart. Let's plot the the results to observe more details. 
+
+**Compare accuracy of models:**
+
+
+```{r echo=T, error = FALSE}
+
+theme1 <- trellis.par.get()
+theme1$plot.symbol$col = rgb(.2, .2, .2, .4)
+theme1$plot.symbol$pch = 16
+theme1$plot.line$col = rgb(1, 0, 0, .7)
+theme1$plot.line$lwd <- 2
+trellis.par.set(theme1)
+bwplot(results, layout = c(3, 1))
+
+```
+Here on the above graph we can see that glm & cart has the best `accuracy` but with regards to `Kappa` the leader is cart and lda2. Let's observe another measure "ROC" to see which is the best.
+
+
+
+We will set 5-fold `cross validation` to estimate `ROC`.
+
+
+```{r}
+control1 <- trainControl(method="cv", classProbs = TRUE, summaryFunction = twoClassSummary, number=5)
+metricROC <- "ROC" # also "ROC"
+```
+
+
+## 5.3 Compare Algorithms -- ROC
+
+
+```{r message= FALSE} 
+#
+# logistic regression
+set.seed(987654321)
+fit.glmROC <- train(deposit~., data=data_train, method="glm", family = "binomial", metric=metricROC, trControl=control1)
+# a) linear algorithms
+# LDA
+set.seed(987654321)
+fit.lda1ROC <- train(deposit~., data=data_train, method="lda", metric=metricROC, trControl=control1)
+# LDA2
+set.seed(987654321)
+fit.lda2ROC <- train(deposit~., data=data_train, method="lda", metric=metricROC, trControl=control1, prior = c(0.5, 0.5))
+# QDA
+set.seed(987654321)
+fit.qda1ROC <- train(deposit~., data=data_train, method="qda", metric=metricROC, trControl=control1)
+# QDA2
+set.seed(987654321)
+fit.qda2ROC <- train(deposit~., data=data_train, method="qda", metric=metricROC, trControl=control1, prior = c(0.5, 0.5))
+# b) nonlinear algorithms
+# CART
+set.seed(987654321)
+fit.cartROC <- train(deposit~., data=data_train, method="rpart", metric=metricROC, trControl=control1)
+# kNN
+set.seed(987654321)
+fit.knnROC <- train(deposit~., data=data_train, method="knn", metric=metricROC, trControl=control1)
+
+
+```
+
+**Summary of training:**
+
+```{r}
+# summarize accuracy of models
+resultsROC <- resamples(list(glmROC=fit.glmROC, lda1ROC=fit.lda1ROC, lda2ROC=fit.lda2ROC, qda1ROC=fit.qda1ROC, qda2ROC=fit.qda2ROC, cartROC=fit.cartROC, knnROC=fit.knnROC))
+
+summary(resultsROC)
+
+```
+
+According to the ROC we have top three models glmROC, lda1ROC and lda2ROC. However, lda1ROC and lda2ROC have the same statistics. 
+
+
+
+```{r}
+
+theme1 <- trellis.par.get()
+theme1$plot.symbol$col = rgb(.2, .2, .2, .4)
+theme1$plot.symbol$pch = 16
+theme1$plot.line$col = rgb(1, 0, 0, .7)
+theme1$plot.line$lwd <- 2
+trellis.par.set(theme1)
+bwplot(resultsROC, layout = c(3, 1))
+
+
+```
+
+
+
+**Summarize Best Model - Generalized Linear Model** 
+
+```{r}
+# summarize Best Model
+print(fit.glmROC )
+print(fit.glm)
+
+```
+
+**Summarize Model #2 Linear Discriminant Analysis**
+
+
+```{r}
+print(fit.lda1ROC)
+print(fit.lda1)
+
+```
+
+
+**Summarize Model #3 - CART**
+
+```{r}
+print(fit.cartROC)
+print(fit.cart)
+
+```
+
+
+# 6. Finalize Model
+## 6.1  Predictions on test dataset
+
+
+**Predict with Generalized Linear Model**
+
+
+```{r}
+# lets see the forecast error on the test sample
+
+data_test_forecasts <- predict(fit.glm,
+                                  data_test,
+                                  type = "prob")
+
+# confusion matrix 
+
+confusionMatrix(data = as.factor(ifelse(data_test_forecasts["yes"] > 0.5, 
+                                        "yes",
+                                        "no")), 
+                reference = data_test$deposit, 
+                positive = "yes") 
+```
+
+
+**ROC/AUC**
+
+```{r}
+roc.area(ifelse(data_test$deposit == "yes", 1, 0),
+         data_test_forecasts[,"yes"])$A
+
+```
+
+**Predict with Linear Discriminant Analysis**
+
+
+```{r}
+# lets see the forecast error on the test sample
+
+data_test_forecasts_lda1 <- predict(fit.lda1,
+                                  data_test,
+                                  type = "prob")
+
+# confusion matrix 
+
+confusionMatrix(data = as.factor(ifelse(data_test_forecasts_lda1["yes"] > 0.5, 
+                                        "yes",
+                                        "no")), 
+                reference = data_test$deposit, 
+                positive = "yes") 
+```
+
+
+**ROC/AUC**
+
+```{r}
+roc.area(ifelse(data_test$deposit == "yes", 1, 0),
+         data_test_forecasts_lda1[,"yes"])$A
+
+```
+
+
+**Predict with CART**
+
+
+```{r}
+# lets see the forecast error on the test sample
+
+data_test_forecasts_cart <- predict(fit.cart,
+                                  data_test,
+                                  type = "prob")
+
+# confusion matrix 
+
+confusionMatrix(data = as.factor(ifelse(data_test_forecasts_cart["yes"] > 0.5, 
+                                        "yes",
+                                        "no")), 
+                reference = data_test$deposit, 
+                positive = "yes") 
+```
+
+
+**ROC/AUC**
+
+```{r}
+roc.area(ifelse(data_test$deposit == "yes", 1, 0),
+         data_test_forecasts_cart[,"yes"])$A
+
+```
+
+
+
+**Predict with K-nearest neighbours**
+
+
+```{r}
+# lets see the forecast error on the test sample
+
+data_test_forecasts_knn<- predict(fit.knn,
+                                  data_test,
+                                  type = "prob")
+
+# confusion matrix 
+
+confusionMatrix(data = as.factor(ifelse(data_test_forecasts_knn["yes"] > 0.5, 
+                                        "yes",
+                                        "no")), 
+                reference = data_test$deposit, 
+                positive = "yes") 
+```
+
+
+**ROC/AUC**
+
+```{r}
+roc.area(ifelse(data_test$deposit == "yes", 1, 0),
+         data_test_forecasts_knn[,"yes"])$A
+
+```
+
+
+
+
+# 7. Conclusions
+
+Project in nutshell:
+
+  * To predict whether customer subscribed to deposit or not we used data bank marketing campaign data consisted 41188 rows and 21 columns. 
+  * We split the dataset into train and test datasets(70/30). We build machine learning models with different configuration and trained to get the best model. 
+  * We chose glm, lda, cart & knn models with the same order. We based on its predictive accuracy. The process of data preparation, of training of dataset and model selection is in following document.
+  * The best prediction is by glm - `Accuracy 0.9134` and `ROC 0.9374395`. this could be a bit intuitive as glm is good in modeling logistic regressions. 
+  * However, we could try tree based algorithms as well as they perform well in such data.
+  * Time complexity of the algorithms is big. Therefore algorithms like Random Forest would take a lot of time to train the data. However, in sake of improving accuracy could be considered.
+
+Insights from the data:
+
+* According to the data, more "yes" from the customer to subscribe the term deposit is among students and retired people. Retired people tend to have money accumulated during their work life. It is easy to guess that they would prefer to review bank's proposal about deposit and subscribe.
+* Social and Economic factors are highly correlated with each other. Change in one variable impacts another.
+* May is the most effective month to convert customers. Bank should plan more campaigns in May. 
+
+
+# 8. References
+
+Class materials provided by Piotr Wójcik PhD at the course “Machine Learning 1”, University of Warsaw, 2020
+
+Link to the source: https://archive.ics.uci.edu/ml/datasets/Bank+Marketing
+
+Source Paper:
+[Moro et al., 2014] S. Moro, P. Cortez and P. Rita. A Data-Driven Approach 
+to Predict the Success of Bank Telemarketing. Decision Support Systems, 
+Elsevier, 62:22-31, June 2014
+
+Internet sources:
+https://machinelearningmastery.com/feature-selection-with-the-caret-r-package/
+
+Knitr: https://yihui.org/knitr/options/#code-evaluation
+
+About tests: https://stats.idre.ucla.edu/r/whatstat/what-statistical-analysis-should-i-usestatistical-analyses-using-r/#chisq
+
+Photo source: https://unsplash.com/photos/6Y6OnwBKk-o
+
