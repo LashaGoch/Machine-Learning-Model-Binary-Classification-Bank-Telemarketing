@@ -1,5 +1,6 @@
 # Machine-Learning-Model-Binary-Classification-Bank-Telemarketing
 Machine Learning model to predict customers' conversion in telemarketing campaign.
+Project is done in R and published in R Markdown.
 
 ## Goals & Objectives:
 Our goal is to create the most accurate model that predicts whether customer subscribes a short term deposit or not.
